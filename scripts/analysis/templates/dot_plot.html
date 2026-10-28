@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html>
+<head>
+<script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
+<style>
+body { font-family: sans-serif; padding: 24px; background: #fff; color: #333; margin: 0; }
+h3 { font-size: 17px; font-weight: 500; margin-bottom: 4px; color: #222; }
+.sublabel { font-size: 12px; color: #999; margin-bottom: 16px; }
+.legends { display: flex; gap: 40px; margin-top: 16px; flex-wrap: wrap; }
+.legend-group { display: flex; flex-direction: column; gap: 6px; }
+.legend-title { font-size: 12px; color: #888; font-weight: 500; margin-bottom: 2px; }
+.cl-item { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #444; }
+.note { font-size: 11px; color: #bbb; margin-top: 12px; }
+.test-table { margin-top: 16px; border-collapse: collapse; font-size: 13px; }
+.test-table th, .test-table td { padding: 4px 12px; text-align: left; border-bottom: 1px solid #eee; }
+.test-table th { color: #888; font-weight: 500; font-size: 12px; }
+.test-table .stars { font-weight: 600; }
+.download-btn { margin-top: 12px; padding: 6px 16px; font-size: 12px; cursor: pointer; border: 1px solid #ccc; border-radius: 4px; background: #f9f9f9; color: #555; }
+.download-btn:hover { background: #eee; }
+</style>
+</head>
+<body>
+
+<h3 id="title"></h3>
+<div class="sublabel">Color = Operations Officer model &middot; Shape = Compliance Officer model &middot; Error bars = 95% CI (Wilson)</div>
+
+<svg id="chart" width="100%" viewBox="0 0 900 440" preserveAspectRatio="xMidYMid meet"></svg>
+
+<div class="legends">
+  <div class="legend-group">
+    <div class="legend-title">Operations Officer (color)</div>
+    <div id="legend-a"></div>
+  </div>
+  <div class="legend-group">
+    <div class="legend-title">Compliance Officer (shape)</div>
+    <div id="legend-b"></div>
+  </div>
+</div>
+
+<div id="test-results"></div>
+<div class="note" id="note-text"></div>
+
+<script>
+/*DATA_INJECT*/
+
+// Okabe-Ito colorblind-safe palette (extended)
+const palette = ['#0072B2','#E69F00','#009E73','#CC79A7','#56B4E9','#D55E00','#F0E442','#000000'];
+const colorA = modelsA.map((_, i) => palette[i % palette.length]);
+
+document.getElementById('title').textContent = metricLabel.replace(/\b\w/g, function(c) { return c.toUpperCase(); }) + ' By Condition';
+
+const W=900, H=440;
+const padL=60, padR=30, padT=24, padB=100;
+const innerW=W-padL-padR, innerH=H-padT-padB;
+
+// Determine y-axis max from data
+let yMax = 0;
+for (const cond of conditions) {
+  for (const row of cellData[cond]) {
+    for (const cell of row) {
+      if (cell) yMax = Math.max(yMax, cell.ci_hi, cell.mean + 0.05);
+    }
+  }
+}
+yMax = Math.ceil(yMax * 5) / 5;  // round up to nearest 0.2
+yMax = Math.max(yMax, 0.2);
+
+function yPx(v) { return padT + innerH * (1 - v / yMax); }
+
+const nCond = conditions.length;
+const nA = modelsA.length;
+const nB = modelsB.length;
+const groupW = innerW / nCond;
+const clusterW = groupW / nA;
+const spread = Math.min(16, clusterW / (nB + 1));
+const bOffsets = modelsB.map((_, i) => (i - (nB - 1) / 2) * spread);
+
+function xPx(ci, ai, bi) {
+  const groupCenter = padL + groupW * ci + groupW / 2;
+  const clusterOffset = (ai - (nA - 1) / 2) * clusterW;
+  return groupCenter + clusterOffset + bOffsets[bi];
+}
+
+const svg = document.getElementById('chart');
+let html = '';
+
+// Gridlines + y labels
+const nTicks = Math.round(yMax / 0.2) + 1;
+for (let i = 0; i < nTicks; i++) {
+  const t = i * 0.2;
+  if (t > yMax) break;
+  const y = yPx(t);
+  html += '<line x1="'+padL+'" y1="'+y+'" x2="'+(W-padR)+'" y2="'+y+'" stroke="#f0f0f0" stroke-width="1"/>';
+  html += '<text x="'+(padL-10)+'" y="'+(y+4)+'" text-anchor="end" font-size="12" fill="#bbb">'+Math.round(t*100)+'%</text>';
+}
+html += '<line x1="'+padL+'" y1="'+padT+'" x2="'+padL+'" y2="'+(H-padB)+'" stroke="#e5e7eb" stroke-width="1"/>';
+
+// Condition labels + sample sizes + dividers
+conditions.forEach(function(cond, ci) {
+  const cx = padL + groupW * ci + groupW / 2;
+  var capCond = cond.charAt(0).toUpperCase() + cond.slice(1);
+  // Count samples for this condition
+  var condN = 0;
+  cellData[cond].forEach(function(row) {
+    row.forEach(function(cell) { if (cell) condN += cell.n; });
+  });
+  html += '<text x="'+cx+'" y="'+(H-padB+22)+'" text-anchor="middle" font-size="14" fill="#333" font-weight="500">'+capCond+'</text>';
+  html += '<text x="'+cx+'" y="'+(H-padB+36)+'" text-anchor="middle" font-size="11" fill="#999">n='+condN+'</text>';
+  if (ci > 0) {
+    const divX = padL + groupW * ci;
+    html += '<line x1="'+divX+'" y1="'+padT+'" x2="'+divX+'" y2="'+(H-padB)+'" stroke="#f3f4f6" stroke-width="1" stroke-dasharray="4 3"/>';
+  }
+});
+
+// Significance notes below each treatment condition (vs baseline)
+if (typeof pairwiseTests !== 'undefined') {
+  // Build lookup: condition index -> test vs baseline
+  var baselineTests = {};
+  pairwiseTests.forEach(function(test) {
+    if (test.cond1 === 'baseline') baselineTests[test.cond2_idx] = test;
+    if (test.cond2 === 'baseline') baselineTests[test.cond1_idx] = test;
+  });
+  conditions.forEach(function(cond, ci) {
+    var test = baselineTests[ci];
+    if (!test) return; // skip baseline itself
+    var cx = padL + groupW * ci + groupW / 2;
+    var noteY = H - padB + 50;
+    var stars = test.stars;
+    var method = test.method || 'z-test';
+    // Compute uplift
+    var baselineMean = test.cond1 === 'baseline' ? test.mean1 : test.mean2;
+    var condMean = test.cond1 === 'baseline' ? test.mean2 : test.mean1;
+    var uplift = Math.round((condMean - baselineMean) * 100);
+    var upliftStr = (uplift >= 0 ? '+' : '') + uplift + 'pp vs baseline';
+    if (stars === 'ns') {
+      html += '<text x="'+cx+'" y="'+noteY+'" text-anchor="middle" font-size="11" fill="#bbb">n.s. vs baseline (' + method + ')</text>';
+      html += '<text x="'+cx+'" y="'+(noteY+14)+'" text-anchor="middle" font-size="10" fill="#bbb">' + upliftStr + '</text>';
+    } else {
+      var thresh = stars === '***' ? 'p<.001' : stars === '**' ? 'p<.01' : 'p<.05';
+      html += '<text x="'+cx+'" y="'+noteY+'" text-anchor="middle" font-size="11" fill="#555" font-weight="500">' + stars + ' ' + thresh + ' vs baseline (' + method + ')</text>';
+      html += '<text x="'+cx+'" y="'+(noteY+14)+'" text-anchor="middle" font-size="10" fill="#777">' + upliftStr + '</text>';
+    }
+  });
+}
+
+// Condition average lines
+conditions.forEach(function(cond, ci) {
+  const vals = [];
+  cellData[cond].forEach(function(row) {
+    row.forEach(function(cell) { if (cell) vals.push(cell.mean); });
+  });
+  if (vals.length === 0) return;
+  const avg = vals.reduce(function(a,b){return a+b;},0) / vals.length;
+  const y = yPx(avg);
+  const x1 = padL + groupW * ci + 10;
+  const x2 = padL + groupW * (ci + 1) - 10;
+  html += '<line x1="'+x1+'" y1="'+y+'" x2="'+x2+'" y2="'+y+'" stroke="#999" stroke-width="2" stroke-dasharray="5 3"/>';
+  html += '<text x="'+(x2+4)+'" y="'+(y+4)+'" font-size="11" fill="#999">'+Math.round(avg*100)+'%</text>';
+});
+
+// CI whiskers
+modelsA.forEach(function(mA, ai) {
+  modelsB.forEach(function(mB, bi) {
+    conditions.forEach(function(cond, ci) {
+      const cell = cellData[cond][ai][bi];
+      if (!cell) return;
+      const x = xPx(ci, ai, bi);
+      const col = colorA[ai];
+      const lo = yPx(cell.ci_lo);
+      const hi = yPx(cell.ci_hi);
+      html += '<line x1="'+x+'" y1="'+lo+'" x2="'+x+'" y2="'+hi+'" stroke="'+col+'" stroke-width="1.5" opacity="0.4"/>';
+      html += '<line x1="'+(x-3)+'" y1="'+lo+'" x2="'+(x+3)+'" y2="'+lo+'" stroke="'+col+'" stroke-width="1.5" opacity="0.4"/>';
+      html += '<line x1="'+(x-3)+'" y1="'+hi+'" x2="'+(x+3)+'" y2="'+hi+'" stroke="'+col+'" stroke-width="1.5" opacity="0.4"/>';
+    });
+  });
+});
+
+// Dots -- shape by Agent B
+function dot(x, y, bi, col) {
+  var r = 6;
+  if (bi % 3 === 0) {
+    return '<circle cx="'+x+'" cy="'+y+'" r="'+r+'" fill="'+col+'" stroke="#fff" stroke-width="1.5"/>';
+  } else if (bi % 3 === 1) {
+    var s = r * 1.7;
+    return '<rect x="'+(x-s/2)+'" y="'+(y-s/2)+'" width="'+s+'" height="'+s+'" fill="'+col+'" stroke="#fff" stroke-width="1.5"/>';
+  } else {
+    var d = r * 1.8;
+    return '<polygon points="'+x+','+(y-d)+' '+(x+d)+','+y+' '+x+','+(y+d)+' '+(x-d)+','+y+'" fill="'+col+'" stroke="#fff" stroke-width="1.5"/>';
+  }
+}
+
+modelsA.forEach(function(mA, ai) {
+  modelsB.forEach(function(mB, bi) {
+    conditions.forEach(function(cond, ci) {
+      var cell = cellData[cond][ai][bi];
+      if (!cell) return;
+      var x = xPx(ci, ai, bi);
+      var y = yPx(cell.mean);
+      html += dot(x, y, bi, colorA[ai]);
+    });
+  });
+});
+
+svg.innerHTML = html;
+
+// Legends
+var legA = document.getElementById('legend-a');
+modelsA.forEach(function(m, i) {
+  legA.innerHTML += '<div class="cl-item"><svg width="12" height="12"><circle cx="6" cy="6" r="6" fill="'+colorA[i]+'"/></svg>'+m+'</div>';
+});
+
+var legB = document.getElementById('legend-b');
+var shapes = [
+  '<circle cx="6" cy="6" r="5.5" fill="#888"/>',
+  '<rect x="1" y="1" width="10" height="10" fill="#888"/>',
+  '<polygon points="6,0 12,6 6,12 0,6" fill="#888"/>'
+];
+modelsB.forEach(function(m, i) {
+  legB.innerHTML += '<div class="cl-item"><svg width="12" height="12">' + shapes[i % 3] + '</svg>' + m + '</div>';
+});
+
+// Note
+var totalN = 0;
+for (var c of conditions) for (var r of cellData[c]) for (var cell of r) if (cell) totalN += cell.n;
+document.getElementById('note-text').textContent =
+  'Total samples: ' + totalN + '. Each dot = one Agent A \u00d7 Agent B pairing. CIs: Wilson score intervals. Condition significance: GLMM (Bayesian binomial mixed model, random intercepts for attacker, victim, feature).';
+
+function downloadPNG() {
+  html2canvas(document.body, {scale: 2, backgroundColor: '#fff'}).then(function(canvas) {
+    var a = document.createElement('a');
+    a.download = 'dot_plot.png';
+    a.href = canvas.toDataURL('image/png');
+    a.click();
+  });
+}
+</script>
+<button class="download-btn" onclick="downloadPNG()">Download PNG</button>
+</body>
+</html>

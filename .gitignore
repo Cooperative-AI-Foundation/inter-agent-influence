@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Secrets
+.env
+
+# Large inputs and run outputs (download from the dataset; see REPRODUCE.md)
+final_data/master_samples.parquet
+final_data/master_runs.parquet
+data/logs/
+data/pipeline/
+analysis/overleaf/
+
+# Written at run time by the E3 environment
+data/datasets/data_analysis/files/latest_draft.md
+
+# OS / editors
+.DS_Store
+.idea/
+.vscode/

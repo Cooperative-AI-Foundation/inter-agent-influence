@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html>
+<head>
+<script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
+<style>
+body { font-family: sans-serif; padding: 24px; background: #fff; color: #333; margin: 0; }
+h3 { font-size: 17px; font-weight: 500; margin-bottom: 4px; color: #222; }
+.sublabel { font-size: 12px; color: #999; margin-bottom: 16px; }
+.download-btn { margin-top: 12px; padding: 6px 16px; font-size: 12px; cursor: pointer; border: 1px solid #ccc; border-radius: 4px; background: #f9f9f9; color: #555; }
+.download-btn:hover { background: #eee; }
+.panels { display: flex; gap: 40px; flex-wrap: wrap; }
+.panel { flex: 1; min-width: 280px; }
+.panel-title { font-size: 15px; font-weight: 500; color: #222; margin-bottom: 4px; }
+.panel-sub { font-size: 11px; color: #bbb; margin-bottom: 12px; }
+.grid { display: grid; gap: 5px; align-items: center; }
+.cell {
+  height: 60px; border-radius: 7px;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  position: relative; padding: 4px; box-sizing: border-box;
+}
+.cell-main { font-size: 18px; font-weight: 600; line-height: 1; color: #333; }
+.cell-ci { font-size: 11px; line-height: 1.5; color: #555; }
+.cell-baseline { font-size: 11px; color: #777; line-height: 1.5; }
+.cell-sig { font-size: 16px; position: absolute; top: 2px; right: 6px; color: #7f1d1d; font-weight: 700; }
+.header { font-size: 12px; color: #888; text-align: center; padding-bottom: 4px; }
+.row-label { font-size: 12px; color: #888; text-align: right; padding-right: 6px; }
+.axis-label { font-size: 12px; color: #888; font-weight: 500; text-align: center; }
+.axis-label-y { font-size: 12px; color: #888; font-weight: 500; writing-mode: vertical-lr; transform: rotate(180deg); text-align: center; justify-self: center; }
+.legend-row { display: flex; align-items: center; gap: 24px; margin-top: 20px; flex-wrap: wrap; }
+.legend-bar-wrap { display: flex; align-items: center; gap: 8px; }
+.legend-bar { width: 160px; height: 10px; border-radius: 4px; background: linear-gradient(to right, #fff, #991b1b); border: 1px solid #eee; }
+.legend-label { font-size: 12px; color: #888; }
+.sig-legend { font-size: 12px; color: #555; }
+.note { font-size: 11px; color: #bbb; margin-top: 10px; }
+</style>
+</head>
+<body>
+
+<h3 id="title"></h3>
+<div id="capture-area"><div class="sublabel">Red = violation accepted &middot; White = violation rejected &middot; Stars = significance vs baseline</div>
+
+<div class="panels" id="panels-container"></div>
+
+<div class="legend-row">
+  <div class="legend-bar-wrap">
+    <span class="legend-label">Violation rejected</span>
+    <div class="legend-bar"></div>
+    <span class="legend-label">Violation accepted</span>
+  </div>
+  <div class="sig-legend">*** p&lt;0.001 &nbsp;&nbsp; ** p&lt;0.01 &nbsp;&nbsp; * p&lt;0.05</div>
+</div>
+<div class="note" id="note-text"></div></div>
+
+<script>
+/*DATA_INJECT*/
+
+document.getElementById('title').textContent = metricLabel.replace(/\b\w/g, function(c) { return c.toUpperCase(); });
+
+function pct(v) { return Math.round(v * 100) + '%'; }
+
+function getColor(v) {
+  var lo = [255,255,255], hi = [153,27,27];
+  return 'rgb(' +
+    Math.round(lo[0] + (hi[0]-lo[0]) * v) + ',' +
+    Math.round(lo[1] + (hi[1]-lo[1]) * v) + ',' +
+    Math.round(lo[2] + (hi[2]-lo[2]) * v) + ')';
+}
+
+var container = document.getElementById('panels-container');
+var nCols = modelsB.length + 1;
+
+Object.keys(panels).sort().forEach(function(cond) {
+  var data = panels[cond];
+  var panel = document.createElement('div');
+  panel.className = 'panel';
+
+  var numPanels = Object.keys(panels).length;
+  if (numPanels > 1) {
+    var title = document.createElement('div');
+    title.className = 'panel-title';
+    title.textContent = cond.charAt(0).toUpperCase() + cond.slice(1);
+    panel.appendChild(title);
+
+    var sub = document.createElement('div');
+    sub.className = 'panel-sub';
+    sub.textContent = 'Treatment condition';
+    panel.appendChild(sub);
+  }
+
+  var grid = document.createElement('div');
+  grid.className = 'grid';
+  grid.style.gridTemplateColumns = '24px 72px repeat(' + modelsB.length + ', 1fr)';
+
+  // X-axis label row (Agent B)
+  grid.innerHTML = '<div></div><div></div>';
+  grid.innerHTML += '<div class="axis-label" style="grid-column: span '+modelsB.length+'">Agent B: Compliance Officer</div>';
+
+  // Header row with model names
+  grid.innerHTML += '<div></div><div></div>';
+  modelsB.forEach(function(m) {
+    grid.innerHTML += '<div class="header">' + m + '</div>';
+  });
+
+  // Data rows with Y-axis label on first row
+  modelsA.forEach(function(rowM, i) {
+    if (i === 0) {
+      grid.innerHTML += '<div class="axis-label-y" style="grid-row: span '+modelsA.length+'">Agent A: Operations Agent</div>';
+    }
+    grid.innerHTML += '<div class="row-label">' + rowM + '</div>';
+    data[i].forEach(function(cell) {
+      if (!cell) {
+        grid.innerHTML += '<div class="cell" style="background:#f9f9f9;border:1px solid #eee"><span class="cell-main">--</span></div>';
+        return;
+      }
+      var sigHtml = (!cell.stars || cell.stars === 'ns')
+        ? ''
+        : '<span class="cell-sig">' + cell.stars + '</span>';
+      var baselineHtml = '';
+      if (cell.baseline_mean !== null) {
+        var uplift = Math.round((cell.mean - cell.baseline_mean) * 100);
+        var upliftStr = (uplift >= 0 ? '+' : '') + uplift + 'pp';
+        var upliftColor = uplift > 0 ? '#b91c1c' : '#555';
+        baselineHtml = '<span class="cell-baseline" style="color:'+upliftColor+'">' + upliftStr + ' vs baseline (' + pct(cell.baseline_mean) + ')</span>';
+      }
+      grid.innerHTML +=
+        '<div class="cell" style="background:' + getColor(cell.mean) + ';border:1px solid #f0e0e0">' +
+        sigHtml +
+        '<span class="cell-main">' + pct(cell.mean) + '</span>' +
+        '<span class="cell-ci">&plusmn;' + Math.round((cell.ci_hi - cell.ci_lo) / 2 * 100) + '% (n=' + cell.n + ')</span>' +
+        baselineHtml +
+        '</div>';
+    });
+  });
+
+  panel.appendChild(grid);
+  container.appendChild(panel);
+});
+
+// Note
+document.getElementById('note-text').textContent =
+  metricLabel + ' (\u00b195% CI). Stars: two-proportion z-test vs baseline (per cell). * p<.05, ** p<.01, *** p<.001';
+
+function downloadPNG() {
+  html2canvas(document.body, {scale: 2, backgroundColor: '#fff'}).then(function(canvas) {
+    var a = document.createElement('a');
+    a.download = 'heatmap.png';
+    a.href = canvas.toDataURL('image/png');
+    a.click();
+  });
+}
+</script>
+<button class="download-btn" onclick="downloadPNG()">Download PNG</button>
+</body>
+</html>

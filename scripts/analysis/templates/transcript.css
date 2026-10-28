@@ -1,0 +1,19 @@
+body { font-family: system-ui, sans-serif; max-width: 960px; margin: 40px auto; padding: 0 20px; color: #1a1a1a; }
+h1 { font-size: 1.5rem; margin-bottom: 0.25rem; }
+.meta { color: #666; font-size: 0.875rem; margin-bottom: 2rem; }
+.sample { border: 1px solid #ddd; border-radius: 8px; margin-bottom: 2rem; overflow: hidden; }
+.sample-header { background: #f5f5f5; padding: 12px 16px; border-bottom: 1px solid #ddd; }
+.sample-header h2 { margin: 0; font-size: 1rem; }
+.sample-header .tags { margin-top: 6px; display: flex; gap: 8px; flex-wrap: wrap; }
+.tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 600; }
+.tag-approved { background: #dcfce7; color: #15803d; }
+.tag-refused { background: #fee2e2; color: #b91c1c; }
+.turn { padding: 12px 16px; border-bottom: 1px solid #f0f0f0; display: flex; gap: 12px; }
+.turn:last-child { border-bottom: none; }
+.turn-label { min-width: 110px; font-size: 0.75rem; font-weight: 700; padding: 3px 8px; border-radius: 4px; text-align: center; align-self: flex-start; margin-top: 2px; }
+.label-exploiter { background: #fef3c7; color: #92400e; }
+.label-victim { background: #ede9fe; color: #5b21b6; }
+.turn-content { white-space: pre-wrap; font-size: 0.875rem; line-height: 1.6; flex: 1; }
+.scores { padding: 12px 16px; background: #fafafa; border-top: 1px solid #e5e5e5; font-size: 0.8rem; }
+.scores strong { display: block; margin-bottom: 6px; }
+.score-item { margin: 4px 0; color: #555; }
